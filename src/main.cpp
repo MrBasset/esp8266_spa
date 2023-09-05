@@ -29,6 +29,7 @@
 
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <ESPAsyncWiFiManager.h>
 #include <WebSerial.h>
 
 #include <LiquidCrystal_I2C.h>
@@ -60,6 +61,7 @@ CircularBuffer<uint8_t, 35> Q_in;
 CircularBuffer<uint8_t, 35> Q_out;
 
 AsyncWebServer server(80);
+DNSServer dns;
 
 WiFiClient wifiClient;
 PubSubClient mqtt(wifiClient);
@@ -80,13 +82,6 @@ enum ConfigStates {
   PROCESSED_IT
 };
 
-enum WifiMode {
-  STA,
-  AP
-};
-
-WifiMode wifiState;
-
 ConfigStates have_config = WANT_IT; //stages: 0-> want it; 1-> requested it; 2-> got it; 3-> further processed it
 ConfigStates have_preferences = WANT_IT; //stages: 0-> want it; 1-> requested it; 2-> got it; 3-> further processed it
 ConfigStates have_faultlog = WANT_IT; //stages: 0-> want it; 1-> requested it; 2-> got it; 3-> further processed it
@@ -96,9 +91,13 @@ char faultlog_minutes = 0; //temp logic so we only get the fault log once per 5 
 char filtersettings_minutes = 0; //temp logic so we only get the filter settings once per 5 minutes
 
 // MQTT Broker settings
-String MqttIp;
-String MqttUser;
-String MqttPassword;
+char MqttIp[40];
+char MqttPort[6] = "1883";
+char MqttUser[40];
+char MqttPassword[40];
+
+//flag for saving data
+bool shouldSaveConfig = false;
 
 struct {
   uint8_t jet1 :2;
@@ -158,6 +157,12 @@ void _yield() {
   //httpServer.handleClient();
   MDNS.update();
   ArduinoOTA.handle();
+}
+
+//callback notifying us of the need to save config
+void saveConfigCallback () {
+  SerialDebug.print(F("Should save config"));
+  shouldSaveConfig = true;
 }
 
 void print_msg(CircularBuffer<uint8_t, 35> &data) {
@@ -594,13 +599,15 @@ void reconnect() {
   // Loop until we're reconnected
   if (!mqtt.connected()) {
     // Attempt to connect
-    if (MqttPassword == "") {
+
+    //make sure the MqttPassword pointer isn't null or empty
+    if ((MqttPassword != NULL) && (MqttPassword[0] == '\0')) {
       //connection =
       mqtt.connect(String(String("Spa") + String(millis())).c_str());
     }
     else {
       //connection =
-      mqtt.connect(String(String("Spa") + String(millis())).c_str(), MqttUser.c_str(), MqttPassword.c_str());
+      mqtt.connect(String(String("Spa") + String(millis())).c_str(), MqttUser, MqttPassword);
     }
     //time to connect
     delay(1000);
@@ -797,289 +804,211 @@ void ID_ack() {
   rs485_send();
 }
 
+void configModeCallback(AsyncWiFiManager *myWiFiManager) {
+  Serial.println("Entered config mode");
+  Serial.println(WiFi.softAPIP());
+
+  lcd_print("IP address:", WiFi.softAPIP().toString().c_str());
+
+  Serial.println(myWiFiManager->getConfigPortalSSID());
+}
+
 ///////////////////////////////////////////////////////////////////////////////
+
+const char *config_path = "/config.json";
 
 void setup() {
   SerialDebug.init();
 
   lcd_init();
 
-  if (LittleFS.begin()) {
-    if (LittleFS.exists("/ip.json")) {
-      //WiFi Config exists, grab the config and connect as normal
-      DynamicJsonDocument jsonSettings(1024);
+  if (LittleFS.begin() && LittleFS.exists(config_path)) {
+    //WiFi Config exists, grab the config and connect as normal
+    DynamicJsonDocument jsonSettings(1024);
 
-      String error_msg = "";
+    lcd_print("Fetching settings", "");
+    SerialDebug.print("Fetching Settings");
 
-      lcd_print("Fetching settings", "");
-      SerialDebug.print("Fetching Settings");
+    String WiFiSsid;
+    String WiFiPassword;
 
-      String WiFiSsid;
-      String WiFiPassword;
+    File file = LittleFS.open(config_path, "r");
+    if (!file) {
 
-      File file = LittleFS.open("/ip.txt", "r");
-      if (!file) {
-        SerialDebug.print("could not open file for reading");        
-        ESP.restart();
-      } else {
-        deserializeJson(jsonSettings, file);
+      SerialDebug.print("Fatal:: Could not open file for reading");        
+      ESP.reset();
+      delay(5000);
 
-        WiFiSsid = jsonSettings["WIFI_SSID"].as<String>();
-        WiFiPassword = jsonSettings["WIFI_PASSWORD"].as<String>();
-        MqttIp = jsonSettings["BROKER"].as<String>();
-        MqttUser = jsonSettings["BROKER_LOGIN"].as<String>();
-        MqttPassword = jsonSettings["BROKER_PASS"].as<String>();
-        SerialDebug.print("Successfully read the configuration");
-      }
-      file.close();
+    } else {
+      deserializeJson(jsonSettings, file);
 
-      //LittleFS.end();
+      strcpy(MqttIp, jsonSettings["BROKER_IP"].as<String>().c_str());
+      strcpy(MqttPort, jsonSettings["BROKER_PORT"].as<String>().c_str());
+      strcpy(MqttUser, jsonSettings["BROKER_USER"].as<String>().c_str());
+      strcpy(MqttPassword, jsonSettings["BROKER_PASS"].as<String>().c_str());
 
-      // Begin RS485 in listening mode -> no longer required with new RS485 chip
+      SerialDebug.print("Successfully read the configuration");
+    }
+    file.close();
+  }
+
+  AsyncWiFiManagerParameter custom_mqtt_ip("mqtt_ip", "mqtt ip", MqttIp, 40);
+  AsyncWiFiManagerParameter custom_mqtt_port("mqtt_port", "mqtt port", MqttPort, 5);
+  AsyncWiFiManagerParameter custom_mqtt_user("mqtt_user", "mqtt user", MqttUser, 40);
+  AsyncWiFiManagerParameter custom_mqtt_password("mqtt_password", "mqtt password", MqttPassword, 40);
+
+  AsyncWiFiManager wifiManager(&server,&dns);
+
+  wifiManager.setSaveConfigCallback(saveConfigCallback);
+  wifiManager.setAPCallback(configModeCallback);
+
+  wifiManager.addParameter(&custom_mqtt_ip);
+  wifiManager.addParameter(&custom_mqtt_port);
+  wifiManager.addParameter(&custom_mqtt_user);
+  wifiManager.addParameter(&custom_mqtt_password);
+
+  //wifiManager.setTimeout(120);
+
+  //fetches ssid and pass and tries to connect
+  //if it does not connect it starts an access point with the specified name
+  //here  "AutoConnectAP"
+  //and goes into a blocking loop awaiting configuration
+  if (!wifiManager.autoConnect("esp-spa")) {
+    Serial.println("failed to connect and hit timeout");
+    delay(3000);
+    //reset and try again, or maybe put it to deep sleep
+    ESP.reset();
+    delay(5000);
+  }
+
+  //read updated parameters
+  strcpy(MqttIp, custom_mqtt_ip.getValue());
+  strcpy(MqttPort, custom_mqtt_port.getValue());
+  strcpy(MqttUser, custom_mqtt_user.getValue());
+  strcpy(MqttPassword, custom_mqtt_password.getValue());
+
+  if (shouldSaveConfig) {
+    
+    //WiFi Config exists, grab the config and connect as normal
+    DynamicJsonDocument jsonSettings(1024);
+    jsonSettings["BROKER_IP"] = MqttIp;
+    jsonSettings["BROKER_PORT"] = MqttPort;
+    jsonSettings["BROKER_USER"] = MqttUser;
+    jsonSettings["BROKER_PASS"] = MqttPassword;
+
+    File f = LittleFS.open(config_path, "w");
+    if (!f) {
+      SerialDebug.print(F("Fatal:: failed to create file"));
+    }
+
+    if (serializeJson(jsonSettings, f) == 0) {
+      SerialDebug.print(F("Fatal:: failed to write file"));
+    }
+
+    SerialDebug.print(F("Config file written, restarting"));
+  }
+
+  LittleFS.end();
+
+  // Begin RS485 in listening mode -> no longer required with new RS485 chip
 #if !AUTO_TX
-      pinMode(TX485, OUTPUT);
-      digitalWrite(TX485, LOW);
+  pinMode(TX485, OUTPUT);
+  digitalWrite(TX485, LOW);
 #endif
 
-      SerialDebug.initWeb(&server);
+  // Route for root index.html
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+            { request->send(LittleFS, "/index.html", "text/html"); });
 
-        // Route for root index.html
-      server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-                { request->send(LittleFS, "/index.html", "text/html"); });
+  server.begin();
 
-      lcd_print("Setting up Serial Busses", "");
-      SerialDebug.print("Setting up software serial");
+  SerialDebug.initWeb(&server);
 
-      //pinMode(RLY1, OUTPUT);
-      //digitalWrite(RLY1, HIGH);
-      //pinMode(RLY2, OUTPUT);
-      //digitalWrite(RLY2, HIGH);
+  lcd_print("Setting up Serial Busses", "");
+  SerialDebug.print("Setting up software serial");
 
-      // Spa communication, 115.200 baud 8N1
-      spaSerial.begin(115200,EspSoftwareSerial::SWSERIAL_8N1, GPIORX, GPIOTX, false); // Start software serial
-      spaSerial.enableIntTx(false); // This is needed with high baudrates
+  //pinMode(RLY1, OUTPUT);
+  //digitalWrite(RLY1, HIGH);
+  //pinMode(RLY2, OUTPUT);
+  //digitalWrite(RLY2, HIGH);
 
-      // give Spa time to wake up after POST
-      for (uint8_t i = 0; i < 5; i++) {
-        delay(1000);
-        yield();
-      }
+  // Spa communication, 115.200 baud 8N1
+  spaSerial.begin(115200,EspSoftwareSerial::SWSERIAL_8N1, GPIORX, GPIOTX, false); // Start software serial
+  spaSerial.enableIntTx(false); // This is needed with high baudrates
 
-      Q_in.clear();
-      Q_out.clear();
-
-      lcd_print("Connecting to WiFi", "");
-      SerialDebug.print(F("Connecting to WiFi"));
-
-      WiFi.mode(WIFI_STA);
-      WiFi.setOutputPower(20.5); // this sets wifi to highest power
-      WiFi.begin(WiFiSsid.c_str(), WiFiPassword.c_str());
-      unsigned long timeout = millis() + 10000;
-
-      while (WiFi.status() != WL_CONNECTED && millis() < timeout) {
-        yield();
-      }
-
-      lcd_print("Connected to WiFi", "");
-      SerialDebug.print(F("WiFi Connected"));
-
-      // Reset because of no connection
-      if (WiFi.status() != WL_CONNECTED) {
-
-        lcd_print("Failed to connect to WiFi", "");
-
-        // SAVE WIFI SETTINGS TO FILESYSTEM
-        ESP.restart();
-      }
-
-      lcd_print("IP address:", WiFi.localIP().toString().c_str());
-      SerialDebug.print(F("IP address: "), false);
-      SerialDebug.print(WiFi.localIP());
-
-      SerialDebug.print(F("Arudino OTA Starting"));
-
-      ArduinoOTA.setPort(8266);
-      ArduinoOTA.setHostname("esp-spa");
-      ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
-
-      ArduinoOTA.onStart([]() {
-        String type;
-        if (ArduinoOTA.getCommand() == U_FLASH) {
-          type = "sketch";
-        } else {  // U_FS
-          type = "filesystem";
-        }
-
-        // NOTE: if updating FS this would be the place to unmount FS using FS.end()
-        SerialDebug.print(F("Start updating ") + type);
-      });
-      ArduinoOTA.onEnd([]() {
-        SerialDebug.print("\nEnd");
-      });
-      ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-        WebSerial.printf("Progress: %u%%\r", (progress / (total / 100)));
-      });
-      ArduinoOTA.onError([](ota_error_t error) {
-        WebSerial.printf("Error[%u]: ", error);
-        if (error == OTA_AUTH_ERROR) {
-          SerialDebug.print("Auth Failed");
-        } else if (error == OTA_BEGIN_ERROR) {
-          SerialDebug.print("Begin Failed");
-        } else if (error == OTA_CONNECT_ERROR) {
-          SerialDebug.print("Connect Failed");
-        } else if (error == OTA_RECEIVE_ERROR) {
-          SerialDebug.print("Receive Failed");
-        } else if (error == OTA_END_ERROR) {
-          SerialDebug.print("End Failed");
-        }
-      });
-
-      ArduinoOTA.begin();
-
-      SerialDebug.print("MQTT Starting");
-
-      mqtt.setServer(MqttIp.c_str(), 1883);
-      mqtt.setCallback(callback);
-      mqtt.setKeepAlive(10);
-      mqtt.setSocketTimeout(20);
-
-      //MDNS.begin("spa");
-      MDNS.addService("http", "tcp", 80);
-
-      /*the below is for debug purposes*/
-      mqtt.connect("Spa1", MqttUser.c_str(), MqttPassword.c_str());
-      mqtt.publish("Spa/debug/wifi_ssid", WiFiSsid.c_str());
-      mqtt.publish("Spa/debug/broker", MqttIp.c_str());
-      mqtt.publish("Spa/debug/broker_login", MqttUser.c_str());
-      mqtt.publish("Spa/debug/error", error_msg.c_str());
-      
-      SerialDebug.print("MQTT Started");
-
-      //lcd.noBacklight();
-      wifiState = STA;
-    }
-    else
-    {
-      //WiFi Config doesn't exist, start up in AP mode
-      SerialDebug.print(F("WiFi config doesn't exist. Setting AP mode"));
-
-      WiFi.softAP("ESP-SPA", NULL);
-
-      IPAddress IP = WiFi.softAPIP();
-      SerialDebug.print("AP IP address: ", false);
-      SerialDebug.print(IP);
-
-      lcd_print("IP address:", IP.toString().c_str());
-
-      // Web Server Root URL
-      SerialDebug.print(F("Set up wifi manager index page"));
-      server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-        request->send(LittleFS, "/wifimanager.html", "text/html");
-      });
-      server.on("/bootstrap.min.js", HTTP_GET, [](AsyncWebServerRequest *request){
-        AsyncWebServerResponse *response = request->beginResponse(LittleFS, "/bootstrap.min.js.gz", "application/javascipt");
-        response->addHeader("Content-Encoding", "gzip");
-        request->send(response);
-      });
-      server.on("/bootstrap.min.css", HTTP_GET, [](AsyncWebServerRequest *request){
-        AsyncWebServerResponse *response = request->beginResponse(LittleFS, "/bootstrap.min.css.gz", "text/css");
-        response->addHeader("Content-Encoding", "gzip");
-        request->send(response);
-      });
-            
-      SerialDebug.print(F("Handle wifi manager submit"));
-      server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) {
-
-        SerialDebug.print(F("Got POST with settings"));
-        DynamicJsonDocument jsonSettings(1024);
-
-        int params = request->params();
-        for(int i=0;i<params;i++){
-          AsyncWebParameter* p = request->getParam(i);
-          if(p->isPost()) {
-            // HTTP POST ssid value
-            if (p->name() == "ssid") {
-              String ssid = p->value().c_str();
-
-              SerialDebug.print("WiFi SSID is " + ssid);
-
-              jsonSettings["WIFI_SSID"] = ssid.c_str();
-            }
-            // HTTP POST pass value
-            if (p->name() == "wifipassword") {
-              String pass = p->value().c_str();
-
-              SerialDebug.print(F("WiFi Password is ") + pass);
-
-              jsonSettings["WIFI_SSID"] = pass.c_str();
-            }
-            // HTTP POST MQTT ip value
-            if (p->name() == "brokerip") {
-              String ip = p->value().c_str();
-
-              SerialDebug.print(F("MQTT IP ") + ip);
-
-              // Write file to save value
-              jsonSettings["BROKER"] =  ip.c_str();
-            }
-            // HTTP POST MQTT user value
-            if (p->name() == "brokeruser") {
-              String user = p->value().c_str();
-
-              SerialDebug.print(F("MQTT User ") + user);
-
-              // Write file to save value
-              jsonSettings["BROKER_LOGIN"] =  user.c_str();
-            }
-            // HTTP POST MQTT password value
-            if (p->name() == "brokerpassword") {
-              String pass = p->value().c_str();
-
-              SerialDebug.print(F("MQTT Password ") + pass);
-
-              // Write file to save value
-              jsonSettings["BROKER_PASS"] =  pass.c_str();
-            }
-
-            File f = LittleFS.open("/ip.json", "w");
-            if (!f) {
-              SerialDebug.print("failed to create file");
-            }
-
-            if (serializeJson(jsonSettings, f) == 0) {
-              SerialDebug.print(F("failed to write file"));
-            }
-
-            SerialDebug.print(F("Config file written, restarting"));
-
-            f.close();
-          }
-        }
-
-        request->send(200, "text/plain", "Done. ESP will restart.");
-        delay(3000);
-        ESP.restart();
-      });
-
-      server.serveStatic("/", LittleFS, "/").setDefaultFile("wifimanager.html");;
-
-      SerialDebug.print(F("Start the server"));
-      server.begin();
-      SerialDebug.print(F("Set up MDNS"));
-      MDNS.begin("eps-spa");
-      MDNS.addService("http", "tcp", 80);
-      
-      wifiState = AP;
-    }
-  
-  } else {
-    SerialDebug.print(F("Could not mount fs, restarting"));
-    ESP.restart();
+  // give Spa time to wake up after POST
+  for (uint8_t i = 0; i < 5; i++) {
+    delay(1000);
+    yield();
   }
+
+  Q_in.clear();
+  Q_out.clear();
+
+  lcd_print("IP address:", WiFi.localIP().toString().c_str());
+  SerialDebug.print(F("IP address: "), false);
+  SerialDebug.print(WiFi.localIP());
+
+  SerialDebug.print(F("Arudino OTA Starting"));
+
+  ArduinoOTA.setPort(8266);
+  ArduinoOTA.setHostname("esp-spa");
+  ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
+
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH) {
+      type = "sketch";
+    } else {  // U_FS
+      type = "filesystem";
+    }
+
+    // NOTE: if updating FS this would be the place to unmount FS using FS.end()
+    SerialDebug.print(F("Start updating ") + type);
+  });
+  ArduinoOTA.onEnd([]() {
+    SerialDebug.print("\nEnd");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    WebSerial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    WebSerial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) {
+      SerialDebug.print("Auth Failed");
+    } else if (error == OTA_BEGIN_ERROR) {
+      SerialDebug.print("Begin Failed");
+    } else if (error == OTA_CONNECT_ERROR) {
+      SerialDebug.print("Connect Failed");
+    } else if (error == OTA_RECEIVE_ERROR) {
+      SerialDebug.print("Receive Failed");
+    } else if (error == OTA_END_ERROR) {
+      SerialDebug.print("End Failed");
+    }
+  });
+
+  ArduinoOTA.begin();
+
+  SerialDebug.print("MQTT Starting");
+
+  mqtt.setServer(MqttIp, 1883);
+  mqtt.setCallback(callback);
+  mqtt.setKeepAlive(10);
+  mqtt.setSocketTimeout(20);
+
+  //MDNS.begin("spa");
+  MDNS.addService("http", "tcp", 80);
+
+  /*the below is for debug purposes*/
+  mqtt.connect("Spa1", MqttUser, MqttPassword);
+  mqtt.publish("Spa/debug/wifi_ssid", WiFi.SSID().c_str());
+  mqtt.publish("Spa/debug/broker", MqttIp);
+  mqtt.publish("Spa/debug/broker_login", MqttUser);
+  
+  SerialDebug.print("MQTT Started");
 }
 
 void loop() {
-  if (wifiState == AP) return;
 
   if (WiFi.status() != WL_CONNECTED) ESP.restart();
   if (!mqtt.connected()) reconnect();
