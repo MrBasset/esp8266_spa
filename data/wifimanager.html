@@ -1,0 +1,51 @@
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html;charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link href="/bootstrap.min.css" rel="stylesheet" />
+
+    <title>Configure WiFi Credentials</title>
+</head>
+<body>
+    <div class="modal modal-sheet position-static d-block bg-body-secondary p-4 py-md-5" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content rounded-4 shadow">
+                <div class="modal-header p-5 pb-4 border-bottom-0">
+                    <h1>Set up WiFi and MQTT Parameters</h1>
+                </div>
+                <div class="modal-body p-5 pt-0">
+                    <form action="/" method="post">
+                      <h2 class="fs-5 fw-bold mb-3">WiFi Credentials</h2>
+                      <div class="form-floating mb-3">
+                        <input type="text" class="form-control rounded-3" id="ssid" placeholder="mywifissid">
+                        <label for="ssid">SSID</label>
+                      </div>
+                      <div class="form-floating mb-3">
+                        <input type="password" class="form-control rounded-3" id="wifipassword" placeholder="Password">
+                        <label for="wifipassword">WiFi Password</label>
+                      </div>
+                      <hr class="my-4">
+                      <h2 class="fs-5 fw-bold mb-3">MQTT Details</h2>
+                      <div class="form-floating mb-3">
+                        <input type="text" class="form-control rounded-3" id="brokerip" placeholder="192.168.1.1">
+                        <label for="brokerip">MQTT Broker IP</label>
+                      </div>
+                      <div class="form-floating mb-3">
+                        <input type="text" class="form-control rounded-3" id="brokeruser" placeholder="mqtt">
+                        <label for="brokeruser">MQTT Username</label>
+                      </div>
+                      <div class="form-floating mb-3">
+                        <input type="password" class="form-control rounded-3" id="brokerpassword" placeholder="Password">
+                        <label for="brokerpassword">MQTT Password</label>
+                      </div>
+                      <button class="w-100 mb-2 btn btn-lg rounded-3 btn-primary" type="submit">Submit</button>
+                    </form>
+                  </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/bootstrap.min.js" />
+</body>
+</html>
