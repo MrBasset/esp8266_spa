@@ -32,7 +32,7 @@
 #include <ESPAsyncWiFiManager.h>
 
 #include <LCDisplay.h>
-#include <Logger.h>
+#include <FormattedLogger.h>
 
 #include <DisplayStrings.h>
 
@@ -900,8 +900,8 @@ void setup() {
   //MDNS.begin("spa");
   MDNS.addService("telnet", "tcp", 23);  // Telnet server of RemoteDebug, register as telnet
 
-  Logger.init(DEBUG);
-  Logger.debug(F("Logging initialised"));
+  fmtLogger.init(DEBUG);
+  fmtLogger.debug(F("Logging initialised"));
 
   /*the below is for debug purposes*/
   mqtt.connect("Spa1", MqttUser, MqttPassword);

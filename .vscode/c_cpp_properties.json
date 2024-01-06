@@ -10,7 +10,7 @@
             "includePath": [
                 "D:/daniel/OneDrive/Documents/GitHub/esp8266_spa/include",
                 "D:/daniel/OneDrive/Documents/GitHub/esp8266_spa/src",
-                "D:/daniel/OneDrive/Documents/GitHub/esp8266_spa/lib/Logger",
+                "D:/daniel/OneDrive/Documents/GitHub/esp8266_spa/lib/FormattedLogger",
                 "C:/Users/danie/.platformio/packages/framework-arduinoespressif8266/libraries/LittleFS/src",
                 "D:/daniel/OneDrive/Documents/GitHub/esp8266_spa/lib/Display",
                 "C:/Users/danie/.platformio/packages/framework-arduinoespressif8266/libraries/ArduinoOTA",
@@ -76,7 +76,7 @@
                 "path": [
                     "D:/daniel/OneDrive/Documents/GitHub/esp8266_spa/include",
                     "D:/daniel/OneDrive/Documents/GitHub/esp8266_spa/src",
-                    "D:/daniel/OneDrive/Documents/GitHub/esp8266_spa/lib/Logger",
+                    "D:/daniel/OneDrive/Documents/GitHub/esp8266_spa/lib/FormattedLogger",
                     "C:/Users/danie/.platformio/packages/framework-arduinoespressif8266/libraries/LittleFS/src",
                     "D:/daniel/OneDrive/Documents/GitHub/esp8266_spa/lib/Display",
                     "C:/Users/danie/.platformio/packages/framework-arduinoespressif8266/libraries/ArduinoOTA",

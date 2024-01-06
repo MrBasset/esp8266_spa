@@ -1,4 +1,4 @@
-#include "Logger.h"
+#include "FormattedLogger.h"
 
 /*
 TODO:
@@ -11,12 +11,12 @@ TODO:
 
 const char* _LVL_STR[] = { "VERBOSE", "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL" };
 
-void Logger_::init(LogLevel ll) {
+void FormattedLogger_::init(LogLevel ll) {
   _loggingLevel = ll;
   TelnetStream.begin();
 }
 
-const char* Logger_::LogLevelEnumToColor (LogLevel ll) {
+const char* FormattedLogger_::LogLevelEnumToColor (LogLevel ll) {
   const char* result = nullptr;
 
   switch(ll) {
@@ -46,7 +46,7 @@ const char* Logger_::LogLevelEnumToColor (LogLevel ll) {
   return result;
 }
 
-void Logger_::print(const char * format, LogLevel ll, const char* time, va_list va_1) {
+void FormattedLogger_::print(const char * format, LogLevel ll, const char* time, va_list va_1) {
   if (ll < _loggingLevel) return; //don't log anything if the message is below the current logging level
 
   va_list va_2;
@@ -68,7 +68,7 @@ void Logger_::print(const char * format, LogLevel ll, const char* time, va_list 
   TelnetStream.printf(message);
 }
 
-void Logger_::info(const __FlashStringHelper *fmt, ...) {
+void FormattedLogger_::info(const __FlashStringHelper *fmt, ...) {
 
   if (INFO < _loggingLevel) return; //don't log anything if the message is below the current logging level
 
@@ -83,7 +83,7 @@ void Logger_::info(const __FlashStringHelper *fmt, ...) {
   va_end(va_1);
 }
 
-void Logger_::debug(const __FlashStringHelper *fmt, ...) {
+void FormattedLogger_::debug(const __FlashStringHelper *fmt, ...) {
 
   if (DEBUG < _loggingLevel) return; //don't log anything if the message is below the current logging level
 
@@ -98,7 +98,7 @@ void Logger_::debug(const __FlashStringHelper *fmt, ...) {
   va_end(va_1);
 }
 
-void Logger_::verbose(const __FlashStringHelper *fmt, ...) {
+void FormattedLogger_::verbose(const __FlashStringHelper *fmt, ...) {
 
   if (VERBOSE < _loggingLevel) return; //don't log anything if the message is below the current logging level
 
@@ -113,7 +113,7 @@ void Logger_::verbose(const __FlashStringHelper *fmt, ...) {
   va_end(va_1);
 }
 
-void Logger_::error(const __FlashStringHelper *fmt, ...) {
+void FormattedLogger_::error(const __FlashStringHelper *fmt, ...) {
 
   if (ERROR < _loggingLevel) return; //don't log anything if the message is below the current logging level
 
@@ -128,7 +128,7 @@ void Logger_::error(const __FlashStringHelper *fmt, ...) {
   va_end(va_1);
 }
 
-void Logger_::critical(const __FlashStringHelper *fmt, ...) {
+void FormattedLogger_::critical(const __FlashStringHelper *fmt, ...) {
 
   if (CRITICAL < _loggingLevel) return; //don't log anything if the message is below the current logging level
 

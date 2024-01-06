@@ -1,7 +1,7 @@
 #pragma once
 
-#ifndef LOGGER_h
-#define LOGGER_h
+#ifndef FormattedLogger_h
+#define FormattedLogger_h
 
 #include <pgmspace.h>
 #include <TelnetStream.h>
@@ -10,9 +10,9 @@
 
 enum LogLevel { VERBOSE = 0, DEBUG = 1, INFO = 2, WARNING = 3, ERROR = 4, CRITICAL = 5 };
 
-class Logger_ {
+class FormattedLogger_ {
   private:
-    Logger_() = default;  //make constructor private
+    FormattedLogger_() = default;  //make constructor private
     const char* LogLevelEnumToColor (LogLevel ll);
     void print(const char * format, LogLevel ll, const char* time, va_list va_1);
     LogLevel _loggingLevel = INFO;
@@ -31,10 +31,10 @@ class Logger_ {
 
 
   public:
-    static Logger_ &getInstance(); //Accessor for singleton
+    static FormattedLogger_ &getInstance(); //Accessor for singleton
 
-    Logger_(const Logger_ &) = delete; //no copying
-    Logger_ &operator=(const Logger_ &) = delete;
+    FormattedLogger_(const FormattedLogger_ &) = delete; //no copying
+    FormattedLogger_ &operator=(const FormattedLogger_ &) = delete;
 
   public:
 
@@ -48,6 +48,6 @@ class Logger_ {
 
 };
 
-extern Logger_ &Logger;
+extern FormattedLogger_ &fmtLogger;
 
 #endif
